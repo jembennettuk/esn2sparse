@@ -17,9 +17,9 @@ class ESN(nn.Module):
         self.N_i = N_i
         self.gamma = gamma
 
-        diluition = 1-N_av/N
+        dilution = 1-N_av/N
         W = np.random.uniform(-1, 1, [N, N])
-        W = W*(np.random.uniform(0, 1, [N, N]) > diluition)
+        W = W*(np.random.uniform(0, 1, [N, N]) > dilution)
         eig = np.linalg.eigvals(W)
         self.W = torch.from_numpy(
             self.rho*W/(np.max(np.absolute(eig)))).float()
@@ -78,19 +78,14 @@ class Classification_ReadOuts:
         self.N = N
         self.N_class = N_class
         self.batch_size = batch_size
-        self.Ws = []
-        self.theta_g = []
-        self.theta_i = []
         self.loss = []
-        self.opt = []
         self.opt_theta = []
 
-    def Dense_Initialise(self, alpha):
+    def Dense_Initialise(self, eta):
 
         self.loss = nn.BCEWithLogitsLoss()
-        self.Ws = nn.Parameter(
-            (2*torch.rand([self.N, self.N_class])-1)/(self.N/10))
-        self.opt = optim.Adam([{'params': self.Ws, 'lr': alpha}])
+        self.Ws = nn.Parameter((2*torch.rand([self.N, self.N_class])-1)/(self.N/10))
+        self.opt = optim.Adam([{'params': self.Ws, 'lr': eta}])
 
     def Dense_Step(self, state, y_true):
         loss = nn.BCEWithLogitsLoss()
@@ -125,31 +120,25 @@ class Classification_ReadOuts:
             error = error+(loss(y, y_true)).detach() * \
                 state.size()[0]/State.size()[0]
 
-            Acc = Acc + torch.mean(torch.eq(torch.argmax(y, dim=1), torch.argmax(
-                y_true, dim=1)).float())*state.size()[0]/State.size()[0]
+            Acc = Acc + torch.mean(torch.eq(torch.argmax(y, dim=1), torch.argmax(y_true, dim=1)).float())*state.size()[0]/State.size()[0]
 
         return y, Acc, error
 
-    def SpaRCe_Initialise(self, X_tr, alpha_size):
+    def SpaRCe_Initialise(self, X_tr, eta):
 
-        Pns = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90]
-
-        self.N_copies = np.shape(Pns)[0]
+        Pns = 0.5
         self.loss = nn.BCEWithLogitsLoss()
 
-        for i in range(self.N_copies):
+        ind = np.random.default_rng().choice(X_tr.shape[0], size=1000, replace=False)
+        theta_g_start = np.percentile(np.abs(X_tr[ind,:]), Pns, 0)
+        self.theta_g = torch.from_numpy(theta_g_start).float()
+        self.theta_i = nn.Parameter(torch.zeros([self.N]))
 
-            theta_g_start = np.percentile(np.abs(X_tr), Pns[i], 0)
+        self.Ws = nn.Parameter(
+            (2*torch.rand([self.N, self.N_class])-1)/(self.N/10))
 
-            self.theta_g.append(torch.from_numpy(theta_g_start).float())
-
-            self.theta_i.append(nn.Parameter(torch.zeros([self.N])))
-
-            self.Ws.append(nn.Parameter(
-                (2*torch.rand([self.N, self.N_class])-1)/(self.N/10)))
-
-            self.opt.append(optim.Adam([{'params': self.Ws, 'lr': alpha_size}, {
-                            'params': self.theta_i, 'lr': alpha_size/10}]))
+        self.opt = optim.Adam([{'params': self.Ws, 'lr': eta}, {
+                        'params': self.theta_i, 'lr': eta/10}])
 
     def SpaRCe_Step(self, state, y_true):
 
@@ -159,31 +148,28 @@ class Classification_ReadOuts:
 
         loss = nn.BCEWithLogitsLoss()
 
-        for i in range(self.N_copies):
+        state_sparse = torch.sign(state) * \
+            torch.relu(torch.abs(state)-self.theta_g-self.theta_i)
 
-            state_sparse.append(torch.sign(
-                state)*torch.relu(torch.abs(state)-self.theta_g[i]-self.theta_i[i]))
+        y = torch.matmul(state_sparse, self.Ws)
 
-            y.append(torch.matmul(state_sparse[i], self.Ws[i]))
+        error = loss(y, y_true)
 
-            error.append(loss(y[i], y_true))
+        error.backward()
 
-            error[i].backward()
-
-            self.opt[i].step()
-            self.opt[i].zero_grad()
+        self.opt.step()
+        self.opt.zero_grad()
 
         return y, error
 
     def SpaRCe_Evaluate(self, State, y_true, Return_S=False):
 
         if Return_S == True:
-            state_sparse = torch.zeros(
-                [self.N_copies, State.size()[0], self.N])
-        y = torch.zeros([self.N_copies, State.size()[0], self.N_class])
-        Acc = torch.zeros([self.N_copies])
-        error = torch.zeros([self.N_copies])
-        sparsity = torch.zeros([self.N_copies])
+            state_sparse = torch.zeros([State.size()[0], self.N])
+        y = torch.zeros([State.size()[0], self.N_class])
+        Acc = 0
+        error = 0
+        sparsity = 0
 
         loss = nn.BCEWithLogitsLoss()
 
@@ -195,30 +181,25 @@ class Classification_ReadOuts:
         if Return_S == False:
             state_sparse = False
 
-        for i in range(self.N_copies):
+        for n in range(N_batch):
+            n_end = int(np.min([(n+1)*batch_s, State.size()[0]]))
+            state = torch.clone(State[n*batch_s:n_end, :])
 
-            for n in range(N_batch):
+            S_new = (torch.sign(state)*torch.relu(torch.abs(state) -
+                        self.theta_g-self.theta_i)).detach()
 
-                n_end = int(np.min([(n+1)*batch_s, State.size()[0]]))
-                state = torch.clone(State[n*batch_s:n_end, :])
+            if Return_S == True:
+                state_sparse[n*batch_s:n_end, :] = torch.clone(S_new)
 
-                S_new = (torch.sign(state)*torch.relu(torch.abs(state) -
-                         self.theta_g[i]-self.theta_i[i])).detach()
+            y[n*batch_s:n_end, :] = torch.matmul(S_new, self.Ws).detach()
 
-                if Return_S == True:
+            error = error + (loss(y, y_true)).detach() * \
+                state.size()[0]/State.size()[0]
 
-                    state_sparse[i, n*batch_s:n_end, :] = torch.clone(S_new)
+            Acc = Acc + torch.mean(torch.eq(torch.argmax(y[n*batch_s:n_end, :], dim=1), torch.argmax(
+                y_true[n*batch_s:n_end, :], dim=1)).float())*state.size()[0]/State.size()[0]
 
-                y[i, n*batch_s:n_end,
-                    :] = torch.matmul(S_new, self.Ws[i]).detach()
-
-                error[i] = error[i]+(loss(y[i], y_true)).detach() * \
-                    state.size()[0]/State.size()[0]
-
-                Acc[i] = Acc[i]+torch.mean(torch.eq(torch.argmax(y[i, n*batch_s:n_end, :], dim=1), torch.argmax(
-                    y_true[n*batch_s:n_end, :], dim=1)).float())*state.size()[0]/State.size()[0]
-
-                sparsity[i] = sparsity[i]+torch.sum(S_new != 0)/N_cl
+            sparsity = sparsity + torch.sum(S_new != 0)/N_cl
 
         return y, Acc, error, sparsity, state_sparse
 
@@ -230,8 +211,7 @@ class train:
         self.batch_size = batch_size  # No. samples per batch
 
         # Batch IDs at which we validate
-        self.N_checks = np.arange(0, self.N_check+1) * \
-            int(np.floor(self.N_batch/self.N_check))
+        self.N_checks = np.hstack((np.arange(0, self.N_check+1,2),N_batch-2,N_batch-1)) #* int(np.floor(self.N_batch/self.N_check/100))
         print(f'N_checks = {self.N_checks}')
         # Placeholder for accuracy (Validation and testing) across training
         self.ACC = np.zeros([2, N_check])
@@ -255,7 +235,7 @@ class train:
             if n > 0:
                 y, error = outs.Dense_Step(state, labels)
 
-            if n == self.N_checks[self.index_help]:
+            if (n == self.N_checks[self.index_help]) or (n == (self.N_batch-1)):
                 images = torch.clone(Z_te[:, :])
                 labels = torch.clone(Y_te[:, :])
 
@@ -272,8 +252,9 @@ class train:
 
                 print('Iteration: ', n, 'Dense VAL: ', Acc_val.detach(),
                       'TE: ', Acc_te.detach(), 'Error: ', Error_val.detach(), Error_te.detach())
-
-                self.index_help = self.index_help+1
+                
+                if self.index_help<(self.N_check-1):
+                    self.index_help = self.index_help+1
             
     def sparce_train(self, outs, Z_tr, Y_tr, Z_val, Y_val, Z_te, Y_te):
         for n in range(self.N_batch):
@@ -288,24 +269,25 @@ class train:
             if n>0:
                 y, error = outs.SpaRCe_Step(state,labels)
 
-            if n==self.N_checks[index_help]:
+            if n==self.N_checks[self.index_help]:
                 images = torch.clone(Z_te[:,:])
                 labels = torch.clone(Y_te[:,:])
 
                 Out_te, Acc_te, Error_te, Sp_te, State_sp_te = outs.SpaRCe_Evaluate(images,labels)
-
+                
                 images = torch.clone(Z_val[:,:])
                 labels = torch.clone(Y_val[:,:])
 
                 Out_val, Acc_val, Error_val, Sp_val, State_sp_val = outs.SpaRCe_Evaluate(images,labels)
                 
-                ACC[0, self.index_help] = np.copy(Acc_val.detach())
-                ACC[1, self.index_help] = np.copy(Acc_te.detach())
-                CL[0, self.index_help] = np.copy(Sp_val.detach())
-                CL[1, self.index_help] = np.copy(Sp_te.detach())
+                self.ACC[0, self.index_help] = np.copy(Acc_val.detach())
+                self.ACC[1, self.index_help] = np.copy(Acc_te.detach())
+                self.CL[0, self.index_help] = np.copy(Sp_val.detach())
+                self.CL[1, self.index_help] = np.copy(Sp_te.detach())
                 
                 
                 print('Iteration: ',n,'SpaRCe VAL: ', Acc_val.detach(),
                 'TE: ', Acc_te.detach(), 'Error: ',Error_val.detach(), Error_te.detach(), 'Coding ',Sp_val, Sp_te)
                 
-                self.index_help = self.index_help+1
+                if self.index_help<(self.N_check-1):
+                    self.index_help = self.index_help+1

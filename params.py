@@ -23,9 +23,9 @@ N = 1000     # No. of ESN units
 ###
 batch_size = 20        # No. input samples per weight/threshold update
 N_batch = 10000        # No. training batches
-N_check = 10           # No. validation checks throughout training
-eta = 0.05             # Learning rate
-train_method = 'dense' # Method to train output weights/thresholds [dense, sparce]
+N_check = 50           # No. validation checks throughout training
+eta = 0.01             # Learning rate
+train_method = 'sparce' # Method to train output weights/thresholds [dense, sparce]
 
 ###
 ### Validation
