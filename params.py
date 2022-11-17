@@ -25,12 +25,12 @@ batch_size = 20        # No. input samples per weight/threshold update
 N_batch = 10000        # No. training batches
 N_check = 50           # No. validation checks throughout training
 eta = 0.01             # Learning rate
-train_method = 'dense' # Method to train output weights/thresholds [dense, sparce]
+train_method = 'sparse' # Method to train output weights/thresholds [dense, sparce]
 
 ###
 ### Readout properties
 ###
-outsPerTime = False # Specifiy whether use a readout weight per time point per class (True)
+outsPerTime = True # Specifiy whether use a readout weight per time point per class (True)
                     # or just one weight per class (False)
 
 ###
