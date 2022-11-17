@@ -62,13 +62,16 @@ print('----RUN.PY: generated/loaded ESN data')
 ### Train output weights (and ESN thresholds)
 ###
 
-# Reshape of the datasets and concatenation of the responses across time. In this way, we use a different output weight for each 
-# node AND time step, resulting in a number of features equal to N*T.
-il.Z_tr = torch.reshape(il.Z_tr, [il.Z_tr.size()[0], par.N*il.T])
-il.Z_val = torch.reshape(il.Z_val, [il.Z_val.size()[0], par.N*il.T])
-il.Z_te = torch.reshape(il.Z_te, [il.Z_te.size()[0], par.N*il.T])
+# If using an output weight per time point
+if par.outsPerTime: # reshape to be N_batch-by-NxT
+    il.Z_tr = torch.reshape(il.Z_tr, [il.Z_tr.size()[0], par.N*il.T])
+    il.Z_val = torch.reshape(il.Z_val, [il.Z_val.size()[0], par.N*il.T])
+    il.Z_te = torch.reshape(il.Z_te, [il.Z_te.size()[0], par.N*il.T])
 
-outs = Classification_ReadOuts(par.N*il.T, il.N_o, par.batch_size) # Notice how the input is the number of features
+if par.outsPerTime:
+    outs = Classification_ReadOuts(par.N*il.T, il.N_o, par.batch_size) # One weight per ESN unit and per time point
+else:
+    outs = Classification_ReadOuts(par.N, il.N_o, par.batch_size, par.outsPerTime, il.T) # One weight per ESN unit
 
 tr = train(par.N_batch, par.N_check, par.batch_size) # Initialise training
 if par.train_method=='dense':

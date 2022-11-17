@@ -73,13 +73,18 @@ class ESN(nn.Module):
 
 class Classification_ReadOuts:
 
-    def __init__(self, N, N_class, batch_size):
+    def __init__(self, N, N_class, batch_size, outsPerTime=True, T=0):
 
         self.N = N
         self.N_class = N_class
         self.batch_size = batch_size
         self.loss = []
         self.opt_theta = []
+        self.outsPerTime = outsPerTime
+        self.T = T
+        if not self.outsPerTime:
+            t_weights = torch.from_numpy(np.array([[np.exp(-np.arange(T, 0, -1) * 5.0 / T)]]))
+            self.t_weights = torch.tile(t_weights,[batch_size, N])
 
     def Dense_Initialise(self, eta):
 
@@ -90,7 +95,10 @@ class Classification_ReadOuts:
     def Dense_Step(self, state, y_true):
         loss = nn.BCEWithLogitsLoss()
 
-        y = torch.matmul(state, self.Ws)
+        if self.outsPerTime:
+            y = torch.matmul(state, self.Ws)
+        else:
+            y = torch.matmul(torch.sum(torch.mul(state, self.t_weights), 2), self.Ws)
 
         error = loss(y, y_true)
         error.backward()
@@ -114,13 +122,16 @@ class Classification_ReadOuts:
         for n in range(N_batch):
             n_end = int(np.min([(n+1)*batch_s, State.size()[0]]))
             state = torch.clone(State[n*batch_s:n_end, :])
-
-            y[n*batch_s:n_end,:] = torch.matmul(state, self.Ws).detach()
-
-            error = error+(loss(y, y_true)).detach() * \
+            
+            if self.outsPerTime:
+                y[n*batch_s:n_end,:] = torch.matmul(state, self.Ws)
+            else:
+                y[n*batch_s:n_end,:] = torch.matmul(torch.sum(torch.mul(state, self.t_weights), 2), self.Ws)
+            
+            error = error+(loss(y[n*batch_s:n_end,:], y_true[n*batch_s:n_end,:])).detach() * \
                 state.size()[0]/State.size()[0]
 
-            Acc = Acc + torch.mean(torch.eq(torch.argmax(y, dim=1), torch.argmax(y_true, dim=1)).float())*state.size()[0]/State.size()[0]
+            Acc = Acc + torch.mean(torch.eq(torch.argmax(y[n*batch_s:n_end,:], dim=1), torch.argmax(y_true[n*batch_s:n_end,:], dim=1)).float())*state.size()[0]/State.size()[0]
 
         return y, Acc, error
 
@@ -151,7 +162,10 @@ class Classification_ReadOuts:
         state_sparse = torch.sign(state) * \
             torch.relu(torch.abs(state)-self.theta_g-self.theta_i)
 
-        y = torch.matmul(state_sparse, self.Ws)
+        if self.outsPerTime:
+            y = torch.matmul(state_sparse, self.Ws)
+        else:
+            y = torch.matmul(torch.sum(torch.mul(state_sparse, self.t_weights), 2), self.Ws)        
 
         error = loss(y, y_true)
 
@@ -191,9 +205,12 @@ class Classification_ReadOuts:
             if Return_S == True:
                 state_sparse[n*batch_s:n_end, :] = torch.clone(S_new)
 
-            y[n*batch_s:n_end, :] = torch.matmul(S_new, self.Ws).detach()
+            if self.outsPerTime:
+                y[n*batch_s:n_end,:] = torch.matmul(S_new, self.Ws).detach()
+            else:
+                y[n*batch_s:n_end,:] = torch.matmul(torch.sum(torch.mul(S_new, self.t_weights), 2), self.Ws).detach()
 
-            error = error + (loss(y, y_true)).detach() * \
+            error = error + (loss(y[n*batch_s:n_end,:], y_true[n*batch_s:n_end,:])).detach() * \
                 state.size()[0]/State.size()[0]
 
             Acc = Acc + torch.mean(torch.eq(torch.argmax(y[n*batch_s:n_end, :], dim=1), torch.argmax(
@@ -211,7 +228,7 @@ class train:
         self.batch_size = batch_size  # No. samples per batch
 
         # Batch IDs at which we validate
-        self.N_checks = np.hstack((np.arange(0, self.N_check+1,2),N_batch-2,N_batch-1)) #* int(np.floor(self.N_batch/self.N_check/100))
+        self.N_checks = np.hstack((np.arange(0, self.N_check+1,10),N_batch-2,N_batch-1)) #* int(np.floor(self.N_batch/self.N_check/100))
         print(f'N_checks = {self.N_checks}')
         # Placeholder for accuracy (Validation and testing) across training
         self.ACC = np.zeros([2, N_check])
@@ -234,27 +251,28 @@ class train:
 
             if n > 0:
                 y, error = outs.Dense_Step(state, labels)
-
+            
             if (n == self.N_checks[self.index_help]) or (n == (self.N_batch-1)):
-                images = torch.clone(Z_te[:, :])
-                labels = torch.clone(Y_te[:, :])
+                with torch.no_grad():
+                    images = torch.clone(Z_te[:, :])
+                    labels = torch.clone(Y_te[:, :])
 
-                Out_te, Acc_te, Error_te = outs.Dense_Evaluate(images, labels)
+                    Out_te, Acc_te, Error_te = outs.Dense_Evaluate(images, labels)
 
-                images = torch.clone(Z_val[:, :])
-                labels = torch.clone(Y_val[:, :])
+                    images = torch.clone(Z_val[:, :])
+                    labels = torch.clone(Y_val[:, :])
 
-                Out_val, Acc_val, Error_val = outs.Dense_Evaluate(
-                    images, labels)
+                    Out_val, Acc_val, Error_val = outs.Dense_Evaluate(
+                        images, labels)
 
-                self.ACC[0, self.index_help] = np.copy(Acc_val.detach())
-                self.ACC[1, self.index_help] = np.copy(Acc_te.detach())
+                    self.ACC[0, self.index_help] = np.copy(Acc_val.detach())
+                    self.ACC[1, self.index_help] = np.copy(Acc_te.detach())
 
-                print('Iteration: ', n, 'Dense VAL: ', Acc_val.detach(),
-                      'TE: ', Acc_te.detach(), 'Error: ', Error_val.detach(), Error_te.detach())
-                
-                if self.index_help<(self.N_check-1):
-                    self.index_help = self.index_help+1
+                    print('Iteration: ', n, 'Dense VAL: ', Acc_val.detach(),
+                        'TE: ', Acc_te.detach(), 'Error: ', Error_val.detach(), Error_te.detach())
+                    
+                    if self.index_help<(self.N_check-1):
+                        self.index_help = self.index_help+1
             
     def sparce_train(self, outs, Z_tr, Y_tr, Z_val, Y_val, Z_te, Y_te):
         for n in range(self.N_batch):
@@ -269,25 +287,26 @@ class train:
             if n>0:
                 y, error = outs.SpaRCe_Step(state,labels)
 
-            if n==self.N_checks[self.index_help]:
-                images = torch.clone(Z_te[:,:])
-                labels = torch.clone(Y_te[:,:])
+            if (n == self.N_checks[self.index_help]) or (n == (self.N_batch-1)):
+                with torch.no_grad():
+                    images = torch.clone(Z_te[:,:])
+                    labels = torch.clone(Y_te[:,:])
 
-                Out_te, Acc_te, Error_te, Sp_te, State_sp_te = outs.SpaRCe_Evaluate(images,labels)
-                
-                images = torch.clone(Z_val[:,:])
-                labels = torch.clone(Y_val[:,:])
+                    Out_te, Acc_te, Error_te, Sp_te, State_sp_te = outs.SpaRCe_Evaluate(images,labels)
+                    
+                    images = torch.clone(Z_val[:,:])
+                    labels = torch.clone(Y_val[:,:])
 
-                Out_val, Acc_val, Error_val, Sp_val, State_sp_val = outs.SpaRCe_Evaluate(images,labels)
-                
-                self.ACC[0, self.index_help] = np.copy(Acc_val.detach())
-                self.ACC[1, self.index_help] = np.copy(Acc_te.detach())
-                self.CL[0, self.index_help] = np.copy(Sp_val.detach())
-                self.CL[1, self.index_help] = np.copy(Sp_te.detach())
-                
-                
-                print('Iteration: ',n,'SpaRCe VAL: ', Acc_val.detach(),
-                'TE: ', Acc_te.detach(), 'Error: ',Error_val.detach(), Error_te.detach(), 'Coding ',Sp_val, Sp_te)
-                
-                if self.index_help<(self.N_check-1):
-                    self.index_help = self.index_help+1
+                    Out_val, Acc_val, Error_val, Sp_val, State_sp_val = outs.SpaRCe_Evaluate(images,labels)
+                    
+                    self.ACC[0, self.index_help] = np.copy(Acc_val.detach())
+                    self.ACC[1, self.index_help] = np.copy(Acc_te.detach())
+                    self.CL[0, self.index_help] = np.copy(Sp_val.detach())
+                    self.CL[1, self.index_help] = np.copy(Sp_te.detach())
+                    
+                    
+                    print('Iteration: ',n,'SpaRCe VAL: ', Acc_val.detach(),
+                    'TE: ', Acc_te.detach(), 'Error: ',Error_val.detach(), Error_te.detach(), 'Coding ',Sp_val, Sp_te)
+                    
+                    if self.index_help<(self.N_check-1):
+                        self.index_help = self.index_help+1
