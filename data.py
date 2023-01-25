@@ -25,26 +25,27 @@ class seqMNIST():
         y_tr[:] = torch.from_numpy(train_y)
         '''
         self.X_te = mnist_testset.data  # Test set images
-        y_te = mnist_testset.targets  # Test set labels
-        N_te = y_te.size()[0]  # Number of test samples
+        self.label_te = mnist_testset.targets  # Test set labels
+        N_te = self.label_te.size()[0]  # Number of test samples
         self.N_o = 10 # No. output units/classes
         
         # Initialisation of the one-hot encoded labels for the test set
         self.Y_te = torch.zeros([N_te, self.N_o])
         # From labels to one-hot encoded labels for the test set
-        self.Y_te[np.arange(0, N_te), y_te] = 1
+        self.Y_te[np.arange(0, N_te), self.label_te] = 1
 
         self.X_tr = mnist_trainset.data  # Train set images
-        y_tr = mnist_trainset.targets  # Train labels
-        N_tr = y_tr.size()[0]
+        self.label_tr = mnist_trainset.targets  # Train labels
+        N_tr = self.label_tr.size()[0]
 
         # Initialisation of one-hot encoded labels for training
         self.Y_tr = torch.zeros([N_tr, self.N_o])
         # From labels to one-hot encoded labels for the training set
-        self.Y_tr[np.arange(0, N_tr), y_tr] = 1
+        self.Y_tr[np.arange(0, N_tr), self.label_tr] = 1
 
         i_val = np.random.permutation(np.arange(0, N_tr))[0:par.N_val]
 
+        self.label_val = self.label_tr[i_val]
         self.X_val = self.X_tr[i_val, :, :]
         self.Y_val = self.Y_tr[i_val, :]
 
