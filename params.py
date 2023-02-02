@@ -33,8 +33,8 @@ eta_met = 0.005               # Learning rate for ESN-MET weights
 ### Output layer and training properties
 ###
 OUTsave = False         # Save output validation responses for analyses
-batch_size = 100        # No. input samples per weight/threshold update
-N_batch = 80000        # No. training batches
+batch_size = 4096        # No. input samples per weight/threshold update
+N_batch = 20000        # No. training batches
 N_check = 100            # No. validation checks throughout training
 eta_out = 0.01             # Learning rate for ESN-OUT/MET-OUT weights
 out_train_method = 'dense' # Method to train output weights/thresholds [dense, sparce]

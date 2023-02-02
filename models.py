@@ -159,11 +159,11 @@ class METlin(nn.Module):
                 
         if self.saveflag:            
             # Compute Euclidean distances for debugging
+CHECK THAT DIST MEASURE COMES FROM ALL 1000 SAMPLES
             with torch.no_grad():
                 d1 = 0.0
                 d2 = 0.0
-                n_samp = met_anc.shape[0]
-                for j in torch.arange(n_samp):
+                for j in torch.arange(N_samp):
                     d1 += torch.dist(met_anc[j,:],met_pos[j,:],2)
                     d2 += torch.dist(met_anc[j,:],met_neg[j,:],2)
 
@@ -418,6 +418,9 @@ class train:
                         self.saveind = self.saveind+1
 
     def met_tripletloss_train(self, met, esn_tr, esn_val, label_tr, label_val):
+        # Preallocate memory for positive and negative examples
+        positive = torch.zeros(self.batch_size, esn_tr.shape[1])
+        negative = torch.zeros(self.batch_size, esn_tr.shape[1])
         for n in range(self.N_batch):
             if n==ma.ceil(self.N_batch/2):
                 met.opt.param_groups[0]['lr'] = 0.0025
@@ -427,8 +430,8 @@ class train:
                 print(f'----MODELS.PY: triplet loss training batch {n}/{self.N_batch}')
             
             # Preallocate memory for positive and negative examples
-            positive = torch.zeros(self.batch_size, esn_tr.shape[1])
-            negative = torch.zeros(self.batch_size, esn_tr.shape[1])
+            positive[:] = 0.0
+            negative[:] = 0.0
             # Select anchor samples for this batch
             N_tr = np.shape(esn_tr)[0]
             anch_ind = np.random.randint(0, N_tr, self.batch_size)
