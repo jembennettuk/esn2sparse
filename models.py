@@ -55,7 +55,7 @@ class ESN(nn.Module):
         self.Reset(Input[:, 0])
 
         batch = np.max([Input.size()[0], 10000])
-        N_b = np.int(np.ceil(Input.size()[0]/batch))
+        N_b = np.int_(np.ceil(Input.size()[0]/batch))
 
         for n in range(N_b):
 
@@ -154,24 +154,25 @@ class METlin(nn.Module):
             loss += self.loss(met_anc, met_pos, met_neg)
 
             if self.saveflag:
+                # Save responses and weights
                 self.sav[:,n*minibatch_size:(n+1)*minibatch_size, saveind] = torch.transpose(met_anc, 0, 1).detach()
                 self.wsav[:,:,saveind] = self.W_esn.weight.data.detach()
-                
-        if self.saveflag:            
-            # Compute Euclidean distances for debugging
-CHECK THAT DIST MEASURE COMES FROM ALL 1000 SAMPLES
-            with torch.no_grad():
-                d1 = 0.0
-                d2 = 0.0
-                for j in torch.arange(N_samp):
-                    d1 += torch.dist(met_anc[j,:],met_pos[j,:],2)
-                    d2 += torch.dist(met_anc[j,:],met_neg[j,:],2)
+                # Compute Euclidean distances for each minibatch
+                with torch.no_grad():
+                    d1 = 0.0
+                    d2 = 0.0
+                    for j in torch.arange(minibatch_size):
+                        d1 += torch.dist(met_anc[j,:],met_pos[j,:],2)
+                        d2 += torch.dist(met_anc[j,:],met_neg[j,:],2)
+                    d1 /= minibatch_size; d2 /= minibatch_size
 
-                self.dpos[saveind] = d1 / n_samp
-                self.dneg[saveind] = d2 / n_samp
-                
-                print(f'anchor-pos dist = {self.dpos[saveind]}    anchor-neg dist = {self.dneg[saveind]}')
-                
+            self.dpos[saveind] += d1
+            self.dneg[saveind] += d2
+        
+        # Compute distances and loss fo this training batch
+        self.dpos[saveind] /= N_minibatch
+        self.dneg[saveind] /= N_minibatch       
+        print(f'anchor-pos dist = {self.dpos[saveind]}    anchor-neg dist = {self.dneg[saveind]}')        
         loss /= N_minibatch
 
         return loss
