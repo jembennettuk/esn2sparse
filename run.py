@@ -41,6 +41,7 @@ else:
         esn_tr = torch.load(esnname_tr)
         esn_val = torch.load(esnname_val)
         esn_te = torch.load(esnname_te)
+        print(f' esn shape is {esn_tr.shape}')
     else:
         # Initialise ESN
         esn = ESN(par.N_esn, il.N_i, par.N_av, par.alpha, par.rho, par.gamma)
@@ -77,17 +78,20 @@ if par.METflag and not exists(metname_tr):
     # Train MET layer
     if par.met_train_method=='triplet':
         if par.outsPerTime: # reshape to be N_batch-by-NxT
-            Z_tr = torch.reshape(esn_tr, [esn_tr.size()[0], par.N_esn*il.T])
-            Z_val = torch.reshape(esn_val, [esn_val.size()[0], par.N_esn*il.T])
-            Z_te = torch.reshape(esn_te, [esn_te.size()[0], par.N_esn*il.T])
+            # Z_tr = torch.reshape(esn_tr, [esn_tr.size()[0], par.N_esn*il.T])
+            # Z_val = torch.reshape(esn_val, [esn_val.size()[0], par.N_esn*il.T])
+            # Z_te = torch.reshape(esn_te, [esn_te.size()[0], par.N_esn*il.T])
+            Z_tr = torch.clone(esn_tr[:,(il.T-1)::il.T])
+            Z_val = torch.clone(esn_val[:,(il.T-1)::il.T])
+            Z_te = torch.clone(esn_te[:,(il.T-1)::il.T])
         tr.met_tripletloss_train(met, Z_tr, Z_val, il.label_tr, il.label_val)
     
     # Compute and save MET responses
-    met_tr = met.W_esn(Z_tr)
+    met_tr = torch.matmul(Z_tr, met.W_esn) + met.bias
     torch.save(met_tr, metname_tr)
-    met_val = met.W_esn(Z_val)
+    met_val = torch.matmul(Z_val, met.W_esn) + met.bias
     torch.save(met_val, metname_val)
-    met_te = met.W_esn(Z_te)
+    met_te = torch.matmul(Z_te, met.W_esn) + met.bias
     torch.save(met_te, metname_te)
     print('----RUN.PY: saved final MET responses')
 

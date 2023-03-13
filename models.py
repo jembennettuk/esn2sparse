@@ -83,15 +83,23 @@ class METlin(nn.Module):
         self.METclass = 'METlin'
         self.N = N_met
         self.x = []
-        self.W_esn = nn.Linear(N_esn*T, N_met, bias=True)
-        self.loss = nn.TripletMarginLoss(margin=1.0)
-        self.opt = optim.Adam([{'params': self.parameters(), 'lr': eta}])
+        self.W_esn = []
+        self.bias = []
+        # self.W_esn.append(nn.Parameter(torch.randn([N_esn*T, N_met]) / torch.sqrt(torch.tensor(N_esn+N_met))))
+        # self.bias.append(nn.Parameter(torch.zeros([N_met])))
+        # self.W_esn = nn.Parameter(torch.randn([N_esn*T, N_met]) / torch.sqrt(torch.tensor(N_esn+N_met)))
+        self.W_esn = nn.Parameter(torch.randn([N_esn, N_met]) / torch.sqrt(torch.tensor(N_esn+N_met)))
+        self.bias = nn.Parameter(torch.zeros([N_met]))
+        self.opt = optim.Adam([{ 'params': self.W_esn, 'lr':eta },
+                               { 'params': self.bias, 'lr':eta }])
         self.saveflag = saveflag
+
         if saveflag:
             #self.sav = torch.zeros(N_met, N_val, N_check+1)
             self.sav = torch.zeros(N_met, 1000, N_check+1)
             self.saveind = 0
-            self.wsav = torch.zeros(N_met, N_esn*T, N_check+1)
+            # self.wsav = torch.zeros(N_met, N_esn*T, N_check+1)
+            self.wsav = torch.zeros(N_met, N_esn, N_check+1)
             self.dpos = torch.zeros(N_check+1,1)
             self.dneg = torch.zeros(N_check+1,1)
             self.savloss = torch.zeros(N_check+1,2) # Loss [train, test]
@@ -105,17 +113,29 @@ class METlin(nn.Module):
                 self.wsaveind += 1
         '''
         # Compute MET linear responses
-        met_anc = self.W_esn(anchor)
-        met_pos = self.W_esn(positive)
-        met_neg = self.W_esn(negative)
+        met_anc = torch.matmul(anchor, self.W_esn) + self.bias
+        met_pos = torch.matmul(positive, self.W_esn) + self.bias
+        met_neg = torch.matmul(negative, self.W_esn) + self.bias
         
         # Compute Triplet Loss
+        L = torch.sum( torch.pow( met_anc-met_pos, 2 ), 1)-torch.sum( torch.pow( met_anc - met_neg, 2 ), 1) + 1.0
+        L = torch.mean( L*(L>0) )
+        
+        if L>0:
+            # Zeros the gradient before the next iteration
+            self.opt.zero_grad()
+            # Compute gradients
+            L.backward()
+            # Update parameters
+            self.opt.step()
+
+        '''
         L = self.loss(met_anc, met_pos, met_neg)
         # Compute gradients
         L.backward()
         # Update parameters
         self.opt.step()
-        self.opt.zero_grad()
+        self.opt.zero_grad()'''
 
         return L # To check that the Loss is reducing
 
@@ -124,39 +144,55 @@ class METlin(nn.Module):
         N_samp = 1000 #esn.shape[0] # No. samples
         minibatch_size = np.min([N_samp, 200])
         N_minibatch = int(np.ceil(N_samp/minibatch_size))
+        N_class = 10
 
         for n in range(N_minibatch):
-            # Preallocate memory for positive and negative examples
+            # Preallocate memory for anchor, positive and negative examples
+            anchor = torch.zeros(minibatch_size, esn.shape[1])
             positive = torch.zeros(minibatch_size, esn.shape[1])
             negative = torch.zeros(minibatch_size, esn.shape[1])
-            # Select anchor samples for this batch
-            anch_ind = range(n*minibatch_size,min((n+1)*minibatch_size, N_samp))
-            anchor = torch.clone(esn[anch_ind])
-            anch_lab = label[anch_ind]
-            # Select positive and negative samples for this minibatch
-            nanch_ind = np.delete(np.arange(0, N_samp), anch_ind) # not anchor indeces
-            for l in torch.unique(anch_lab):
-                indl = anch_lab==l # logical index into anchor
-                Nindl = sum(indl)  # no. samples with label l in this batch
-                indp = nanch_ind[label[nanch_ind]==l] # index into positive samples
-                indn = nanch_ind[label[nanch_ind]!=l] # index into negative samples
-                indp = indp[np.random.randint(0, len(indp), Nindl.item())] # Select Nindl indeces for positive samples
-                indn = indn[np.random.randint(0, len(indn), Nindl.item())] # Select Nindl indeces for negative samples
-                positive[indl,:] = torch.clone(esn[indp,:]) # Allocate positive samples
-                negative[indl,:] = torch.clone(esn[indn,:]) # Allocate negative samples
+            # # Select anchor samples for this batch
+            # anch_ind = range(n*minibatch_size,min((n+1)*minibatch_size, N_samp))
+            # anchor = torch.clone(esn[anch_ind])
+            # anch_lab = label[anch_ind]
+            # # Select positive and negative samples for this minibatch
+            # nanch_ind = np.delete(np.arange(0, N_samp), anch_ind) # not anchor indeces
+            # for l in torch.unique(anch_lab):
+            #     indl = anch_lab==l # logical index into anchor
+            #     Nindl = sum(indl)  # no. samples with label l in this batch
+            #     indp = nanch_ind[label[nanch_ind]==l] # index into positive samples
+            #     indn = nanch_ind[label[nanch_ind]!=l] # index into negative samples
+            #     indp = indp[np.random.randint(0, len(indp), Nindl.item())] # Select Nindl indeces for positive samples
+            #     indn = indn[np.random.randint(0, len(indn), Nindl.item())] # Select Nindl indeces for negative samples
+            #     positive[indl,:] = torch.clone(esn[indp,:]) # Allocate positive samples
+            #     negative[indl,:] = torch.clone(esn[indn,:]) # Allocate negative samples
+            anchor[:] = 0.0
+            positive[:] = 0.0
+            negative[:] = 0.0
+            # Select anchor, positive, and negative samples
+            for m in range(minibatch_size):
+                # anchor and positive samples
+                rand_cl = np.random.permutation(N_class)
+                rand_p = np.random.randint(0,esn.shape[0],(2,))
+                anchor[m,:] = torch.clone(esn[rand_p[0],:])
+                positive[m,:] = torch.clone(esn[rand_p[1],:])
+                # negative sample
+                rand_n = np.random.randint(0,esn.shape[0])
+                negative[m,:] = torch.clone(esn[rand_n,:])
         
             # Compute METlin responses 
-            met_anc = self.W_esn(anchor)
-            met_pos = self.W_esn(positive)
-            met_neg = self.W_esn(negative)
+            met_anc = torch.matmul(anchor, self.W_esn) + self.bias
+            met_pos = torch.matmul(positive, self.W_esn) + self.bias
+            met_neg = torch.matmul(negative, self.W_esn) + self.bias
             
             # Compute Triplet Loss
-            loss += self.loss(met_anc, met_pos, met_neg)
+            L = torch.sum( torch.pow( met_anc-met_pos, 2 ), 1)-torch.sum( torch.pow( met_anc - met_neg, 2 ), 1) + 1.0
+            loss += torch.mean( L*(L>0) )
 
             if self.saveflag:
                 # Save responses and weights
                 self.sav[:,n*minibatch_size:(n+1)*minibatch_size, saveind] = torch.transpose(met_anc, 0, 1).detach()
-                self.wsav[:,:,saveind] = self.W_esn.weight.data.detach()
+                self.wsav[:,:,saveind] = torch.transpose(self.W_esn.detach(),0,1)
                 # Compute Euclidean distances for each minibatch
                 with torch.no_grad():
                     d1 = 0.0
@@ -419,7 +455,10 @@ class train:
                         self.saveind = self.saveind+1
 
     def met_tripletloss_train(self, met, esn_tr, esn_val, label_tr, label_val):
+        # Get number of classes
+        N_class = np.size(np.unique(label_tr),0)
         # Preallocate memory for positive and negative examples
+        anchor = torch.zeros(self.batch_size, esn_tr.shape[1])
         positive = torch.zeros(self.batch_size, esn_tr.shape[1])
         negative = torch.zeros(self.batch_size, esn_tr.shape[1])
         for n in range(self.N_batch):
@@ -430,25 +469,40 @@ class train:
             if ma.floor(n%(self.N_batch/10))==0:
                 print(f'----MODELS.PY: triplet loss training batch {n}/{self.N_batch}')
             
-            # Preallocate memory for positive and negative examples
+            # Reset anchor, positive and negative examples
+            anchor[:] = 0.0
             positive[:] = 0.0
             negative[:] = 0.0
-            # Select anchor samples for this batch
-            N_tr = np.shape(esn_tr)[0]
-            anch_ind = np.random.randint(0, N_tr, self.batch_size)
-            anchor = torch.clone(esn_tr[anch_ind,:]) # Allocate anchor samples
-            anch_lab = label_tr[anch_ind]
-            # Select positive and negative samples for this batch
-            nanch_ind = np.delete(np.arange(0, N_tr), anch_ind) # not anchor indeces
-            for l in torch.unique(anch_lab):
-                indl = anch_lab==l # logical index into anchor
-                Nindl = sum(indl)  # no. samples with label l in this batch
-                indp = nanch_ind[label_tr[nanch_ind]==l] # index into positive samples
-                indn = nanch_ind[label_tr[nanch_ind]!=l] # index into negative samples
-                indp = indp[np.random.randint(0, len(indp), Nindl.item())] # Select Nindl indeces for positive samples
-                indn = indn[np.random.randint(0, len(indn), Nindl.item())] # Select Nindl indeces for negative samples
-                positive[indl,:] = torch.clone(esn_tr[indp,:]) # Allocate positive samples
-                negative[indl,:] = torch.clone(esn_tr[indn,:]) # Allocate negative samples
+            # Select anchor, positive, and negative samples
+            for m in range(self.batch_size):
+                # anchor and positive samples
+                rand_cl = np.random.permutation(N_class)
+                rand_p = np.random.randint(0,esn_tr.shape[0],(2,))
+                anchor[m,:] = torch.clone(esn_tr[rand_p[0],:])
+                positive[m,:] = torch.clone(esn_tr[rand_p[1],:])
+                # negative sample
+                rand_n = np.random.randint(0,esn_tr.shape[0])
+                negative[m,:] = torch.clone(esn_tr[rand_n,:])
+
+            # # Preallocate memory for positive and negative examples
+            # positive[:] = 0.0
+            # negative[:] = 0.0
+            # # Select anchor samples for this batch
+            # N_tr = np.shape(esn_tr)[0]
+            # anch_ind = np.random.randint(0, N_tr, self.batch_size)
+            # anchor = torch.clone(esn_tr[anch_ind,:]) # Allocate anchor samples
+            # anch_lab = label_tr[anch_ind]
+            # # Select positive and negative samples for this batch
+            # nanch_ind = np.delete(np.arange(0, N_tr), anch_ind) # not anchor indeces
+            # for l in torch.unique(anch_lab):
+            #     indl = anch_lab==l # logical index into anchor
+            #     Nindl = sum(indl)  # no. samples with label l in this batch
+            #     indp = nanch_ind[label_tr[nanch_ind]==l] # index into positive samples
+            #     indn = nanch_ind[label_tr[nanch_ind]!=l] # index into negative samples
+            #     indp = indp[np.random.randint(0, len(indp), Nindl.item())] # Select Nindl indeces for positive samples
+            #     indn = indn[np.random.randint(0, len(indn), Nindl.item())] # Select Nindl indeces for negative samples
+            #     positive[indl,:] = torch.clone(esn_tr[indp,:]) # Allocate positive samples
+            #     negative[indl,:] = torch.clone(esn_tr[indn,:]) # Allocate negative samples
 
             # Compute Triplet Loss, update parameters
             if met.METclass=='METlin':
