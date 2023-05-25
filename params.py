@@ -12,7 +12,7 @@ inputDir = './data/'    # Storage directory for input/label data
 ### ESN properties
 ###
 esnDir = '.' # Directory to store ESN response
-alpha = 0.9  # Decay rate of ESN units [0,1]
+alpha = 0.1  # Decay rate of ESN units [0,1]
 rho = 0.99   # Scale ESN-ESN weights
 gamma = 0.1  # Scale input-ESN weights
 N_av = 10    # Fan-out no. from ESN units
@@ -39,12 +39,14 @@ N_batch = 5000        # No. training batches
 N_check = 50            # No. validation checks throughout training
 eta_out = 0.01             # Learning rate for ESN-OUT/MET-OUT weights
 out_train_method = 'dense' # Method to train output weights/thresholds [dense, sparce]
+n_fb = -2 # Feedback from this layer
 
 ###
 ### Readout properties
 ###
 outsPerTime = True # Specifiy whether use a readout weight per time point per class (True)
                     # or just one weight per class (False)
+reportTime = 100 # Real time Accuracy/Loss report every reportTime time steps
 
 ###
 ### Validation
