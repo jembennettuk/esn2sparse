@@ -68,12 +68,12 @@ outsPerTime = True # Specifiy whether use a readout weight per time point per cl
                     # or just one weight per class (False)
 reportTime = 250 # Real time Accuracy/Loss report every reportTime time steps
 saveLayers = [0, 2]
-nSave = 25 # No. time points to save responses
+saveRespAtN = [] # Save response at these time points
 nSaveMaxT = nEpochs #5000 # Save responses up to this iteration
 nSaveSamples = 10 # No. samples to save per class
 saveFlag_RESP = True # Save responses
 saveFlag_FBWeights = False if not fbLayer else True # Save feedback weights
-
+nWeightSave = 25 # No. time points to save feedback weights
 
 ###
 ### Validation
