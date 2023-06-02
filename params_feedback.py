@@ -13,7 +13,7 @@ inputDir = './data/'    # Storage directory for input/label data
 ### Training properties
 ###
 nEpochs=5000#5000 # No optimiser iterations
-batch_size=40 # No. input samples per optimser iteration
+batch_size=50 # No. input samples per optimser iteration
 eta = 0.0001 # Optimser learning rate
 eta_tau = np.Inf#5000.0 # Time constant for learning rate decay
 nClass=10 # No. classes in dataset
@@ -70,7 +70,7 @@ reportTime = 250 # Real time Accuracy/Loss report every reportTime time steps
 saveLayers = [0, 2]
 saveRespAtN = [] # Save response at these time points
 nSaveMaxT = nEpochs #5000 # Save responses up to this iteration
-nSaveSamples = 10 # No. samples to save per class
+nSaveSamples = 20 # No. samples to save per class
 saveFlag_RESP = True # Save responses
 saveFlag_FBWeights = False if not fbLayer else True # Save feedback weights
 nWeightSave = 25 # No. time points to save feedback weights
